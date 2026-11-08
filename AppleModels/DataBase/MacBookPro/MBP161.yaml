@@ -1,7 +1,7 @@
 BIOSVendor: "Apple Inc."
-BIOSVersion: "1554.80.3.0.0"
-BIOSLegacyVersion: "MBP161.88Z.F000.B00.2101062056"
-BIOSReleaseDate: "01/06/2021"
+BIOSVersion: "2094.80.5.0.0"
+BIOSLegacyVersion: "MBP161.88Z.F000.B00.2601212129"
+BIOSReleaseDate: "01/21/2026"
 SystemManufacturer: "Apple Inc."
 SystemProductName: "MacBookPro16,1"
 SystemVersion: "1.0"
@@ -27,8 +27,8 @@ ChassisAssetTag: ""
 PlatformFeature: 0x32
 FirmwareFeatures: 0xFDAFF066
 FirmwareFeaturesMask: 0xFFFFFF7F
-ExtendedFirmwareFeatures: 0x00000000FDAFF066
-ExtendedFirmwareFeaturesMask: 0x00000000FFFFFF7F
+ExtendedFirmwareFeatures: 0x00000008FDAFF066
+ExtendedFirmwareFeaturesMask: 0x00000008FFFFFF7F
 MemoryFormFactor: 0xD
 # FIXME: Correct this one
 ProcessorType:
@@ -49,17 +49,17 @@ SmcPlatform:
   - 0x00
 OEMStrings: |-
   Apple ROM Version
-    BIOS ID:      MBP161.88Z.F000.B00.2101062056
+    BIOS ID:      MBP161.88Z.F000.B00.2601212129
     Model:        MBP161
-    EFI Version:  1554.80.3.0.0
-    Built by:     root@bb-g8-pdb39
-    Date:         Wed Jan  6 20:56:39 2021
-    Revision:     1554.80.3 (B&I)
+    EFI Version:  2094.80.5.0.0
+    Built by:     root@d56q9
+    Date:         Wed Jan 21 21:29:24 2026
+    Revision:     2094.80.5 (B&I)
     ROM Version:  F000_B00
     Build Type:   Official Build, RELEASE
-    Compiler:     clang-1200.0.30.4
-    UUID:         9FFB0E30-B6D9-3002-922F-A26DD5DB990F
-    UUID:         EE437B38-EF61-3E2F-87DC-1A9F1B912182
+    Compiler:     clang-1700.6.4.2
+    UUID:         61CEA523-D2E3-3EA4-8CF4-104B91C7AD2B
+    UUID:         E4F1951B-7CBD-3042-95C1-0598C5D44D9F
 Specifications:
   CPUCodename:
     - "Coffee Lake"
@@ -104,5 +104,5 @@ AppleModelYear:
   - 2020
   - 2021
 MinimumOSVersion: "10.15.1"
-MaximumOSVersion: null
+MaximumOSVersion: "26.7.1"
 AppleModelId: "J152F"

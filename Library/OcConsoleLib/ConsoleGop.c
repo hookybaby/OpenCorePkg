@@ -13,74 +13,62 @@
 **/
 
 #include "OcConsoleLibInternal.h"
+#include "ConsoleGopInternal.h"
 
+#include <Protocol/AppleEg2Info.h>
 #include <Protocol/ConsoleControl.h>
 #include <Protocol/GraphicsOutput.h>
 #include <Protocol/SimpleTextOut.h>
 
 #include <Library/BaseMemoryLib.h>
+#include <Library/BaseOverflowLib.h>
 #include <Library/BaseLib.h>
 #include <Library/DebugLib.h>
-#include <Library/FrameBufferBltLib.h>
+#include <Library/OcBlitLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/MtrrLib.h>
 #include <Library/OcConsoleLib.h>
 #include <Library/OcMiscLib.h>
-#include <Library/OcGuardLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiRuntimeServicesTableLib.h>
 
-STATIC
-EFI_HANDLE_PROTOCOL
-mOriginalHandleProtocol;
-
-STATIC
-EFI_GRAPHICS_OUTPUT_PROTOCOL *
-mConsoleGraphicsOutput;
-
-STATIC
-FRAME_BUFFER_CONFIGURE *
-mFramebufferContext;
-
-STATIC
-EFI_GRAPHICS_OUTPUT_PROTOCOL_SET_MODE
-mOriginalGopSetMode;
-
-STATIC
-INT32
-mCachePolicy;
+STATIC CONSOLE_GOP_CONTEXT  mGop;
 
 STATIC
 EFI_STATUS
 EFIAPI
 ConsoleHandleProtocol (
-  IN  EFI_HANDLE        Handle,
-  IN  EFI_GUID          *Protocol,
-  OUT VOID              **Interface
+  IN  EFI_HANDLE  Handle,
+  IN  EFI_GUID    *Protocol,
+  OUT VOID        **Interface
   )
 {
   EFI_STATUS  Status;
 
-  Status = mOriginalHandleProtocol (Handle, Protocol, Interface);
+  Status = mGop.OriginalHandleProtocol (Handle, Protocol, Interface);
 
-  if (Status != EFI_UNSUPPORTED) {
+  if ((Status != EFI_UNSUPPORTED) && EFI_ERROR (Status)) {
     return Status;
   }
 
-  if (CompareGuid (&gEfiGraphicsOutputProtocolGuid, Protocol)) {
-    if (mConsoleGraphicsOutput != NULL) {
-      *Interface = mConsoleGraphicsOutput;
-      return EFI_SUCCESS;
-    }
-  } else if (CompareGuid (&gEfiUgaDrawProtocolGuid, Protocol)) {
+  if ((mGop.ConsoleGop != NULL) && CompareGuid (&gEfiGraphicsOutputProtocolGuid, Protocol)) {
+    *Interface = mGop.ConsoleGop;
+    return EFI_SUCCESS;
+  }
+
+  if (!EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  if (CompareGuid (&gEfiUgaDrawProtocolGuid, Protocol)) {
     //
     // EfiBoot from 10.4 can only use UgaDraw protocol.
     //
     Status = gBS->LocateProtocol (
-      &gEfiUgaDrawProtocolGuid,
-      NULL,
-      Interface
-      );
+                    &gEfiUgaDrawProtocolGuid,
+                    NULL,
+                    Interface
+                    );
     if (!EFI_ERROR (Status)) {
       return EFI_SUCCESS;
     }
@@ -106,47 +94,57 @@ OcProvideConsoleGop (
   // that HandleProtocol always reports valid chosen GOP.
   //
   if (Route) {
-    mOriginalHandleProtocol  = gBS->HandleProtocol;
-    gBS->HandleProtocol      = ConsoleHandleProtocol;
-    gBS->Hdr.CRC32           = 0;
+    mGop.OriginalHandleProtocol = gBS->HandleProtocol;
+    gBS->HandleProtocol         = ConsoleHandleProtocol;
+    gBS->Hdr.CRC32              = 0;
     gBS->CalculateCrc32 (gBS, gBS->Hdr.HeaderSize, &gBS->Hdr.CRC32);
   }
 
   OriginalGop = NULL;
-  Status = gBS->HandleProtocol (
-    gST->ConsoleOutHandle,
-    &gEfiGraphicsOutputProtocolGuid,
-    (VOID **) &OriginalGop
-    );
+  Status      = gBS->HandleProtocol (
+                       gST->ConsoleOutHandle,
+                       &gEfiGraphicsOutputProtocolGuid,
+                       (VOID **)&OriginalGop
+                       );
 
   if (!EFI_ERROR (Status)) {
     DEBUG ((
       DEBUG_INFO,
       "OCC: GOP exists on ConsoleOutHandle and has %u modes\n",
-      (UINT32) OriginalGop->Mode->MaxMode
+      (UINT32)OriginalGop->Mode->MaxMode
       ));
 
-    //
-    // This is not the case on MacPro5,1 with Mac EFI incompatible GPU.
-    // Here we need to uninstall ConOut GOP in favour of GPU GOP.
-    //
-    if (OriginalGop->Mode->MaxMode > 0) {
-      mConsoleGraphicsOutput = OriginalGop;
+    if (OriginalGop->Mode->Info->PixelFormat == PixelBltOnly) {
+      //
+      // ASUS Z690F has GOP aggregator on console handle with blit only
+      // formats. This GOP obviously does not work on macOS, so we need
+      // to uninstall it, but only when we have an alternative.
+      //
+      DEBUG ((
+        DEBUG_INFO,
+        "OCC: Looking for GOP replacement due to blit-only GOP\n"
+        ));
+    } else if (OriginalGop->Mode->MaxMode == 0) {
+      //
+      // No modes on MacPro5,1 with Mac EFI incompatible GPU.
+      // Here we need to uninstall ConOut GOP in favour of GPU GOP.
+      //
+      DEBUG ((
+        DEBUG_INFO,
+        "OCC: Looking for GOP replacement due to invalid mode count\n"
+        ));
+    } else {
+      mGop.ConsoleGop = OriginalGop;
       return EFI_ALREADY_STARTED;
     }
 
-    DEBUG ((
-      DEBUG_INFO,
-      "OCC: Looking for GOP replacement due to invalid mode count\n"
-      ));
-
     Status = gBS->LocateHandleBuffer (
-      ByProtocol,
-      &gEfiGraphicsOutputProtocolGuid,
-      NULL,
-      &HandleCount,
-      &HandleBuffer
-      );
+                    ByProtocol,
+                    &gEfiGraphicsOutputProtocolGuid,
+                    NULL,
+                    &HandleCount,
+                    &HandleBuffer
+                    );
 
     if (EFI_ERROR (Status)) {
       DEBUG ((DEBUG_INFO, "OCC: No handles with GOP protocol - %r\n", Status));
@@ -157,10 +155,10 @@ OcProvideConsoleGop (
     for (Index = 0; Index < HandleCount; ++Index) {
       if (HandleBuffer[Index] != gST->ConsoleOutHandle) {
         Status = gBS->HandleProtocol (
-          HandleBuffer[Index],
-          &gEfiGraphicsOutputProtocolGuid,
-          (VOID **) &Gop
-          );
+                        HandleBuffer[Index],
+                        &gEfiGraphicsOutputProtocolGuid,
+                        (VOID **)&Gop
+                        );
         break;
       }
     }
@@ -168,72 +166,183 @@ OcProvideConsoleGop (
     DEBUG ((DEBUG_INFO, "OCC: Alternative GOP status is - %r\n", Status));
     FreePool (HandleBuffer);
 
+    if (  !EFI_ERROR (Status)
+       && (OriginalGop->Mode->Info->PixelFormat == PixelBltOnly))
+    {
+      if ((UINT32)Gop->Mode->Info->PixelFormat >= PixelBltOnly) {
+        Status = EFI_NOT_FOUND;
+      }
+
+      DEBUG ((
+        DEBUG_INFO,
+        "OCC: Checking alternative GOP mode %u - %r\n",
+        Gop->Mode->Info->PixelFormat,
+        Status
+        ));
+
+      //
+      // We cannot uninstall this GOP as ASUS will reinstall it.
+      // Hook HandleProtocol instead.
+      //
+      if (!EFI_ERROR (Status)) {
+        mGop.ConsoleGop = Gop;
+        return EFI_SUCCESS;
+      }
+    }
+
     if (!EFI_ERROR (Status)) {
       gBS->UninstallProtocolInterface (
-        gST->ConsoleOutHandle,
-        &gEfiGraphicsOutputProtocolGuid,
-        OriginalGop
-        );
+             gST->ConsoleOutHandle,
+             &gEfiGraphicsOutputProtocolGuid,
+             OriginalGop
+             );
     }
   } else {
     DEBUG ((DEBUG_INFO, "OCC: Installing GOP (%r) on ConsoleOutHandle...\n", Status));
-    Status = gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **) &Gop);
+    Status = gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&Gop);
   }
 
   if (!EFI_ERROR (Status)) {
     Status = gBS->InstallMultipleProtocolInterfaces (
-      &gST->ConsoleOutHandle,
-      &gEfiGraphicsOutputProtocolGuid,
-      Gop,
-      NULL
-      );
+                    &gST->ConsoleOutHandle,
+                    &gEfiGraphicsOutputProtocolGuid,
+                    Gop,
+                    NULL
+                    );
     if (EFI_ERROR (Status)) {
       DEBUG ((DEBUG_WARN, "OCC: Failed to install GOP on ConsoleOutHandle - %r\n", Status));
     }
 
-    mConsoleGraphicsOutput = Gop;
+    mGop.ConsoleGop = Gop;
   } else {
     DEBUG ((DEBUG_WARN, "OCC: Missing compatible GOP - %r\n", Status));
   }
+
   return Status;
 }
 
+/**
+  Update current GOP mode to represent either custom (rotated)
+  or original mode. In general custom mode is used, but to
+  call the original functions it is safer to switch to original.
+
+  @param[in,out]  This      GOP protocol to update.
+  @param[in]      Source    Source mode.
+**/
 STATIC
-FRAME_BUFFER_CONFIGURE *
-EFIAPI
-DirectGopFromTarget (
-  IN EFI_PHYSICAL_ADDRESS                  FramebufferBase,
-  IN EFI_GRAPHICS_OUTPUT_MODE_INFORMATION  *Info
+VOID
+SwitchMode (
+  IN OUT EFI_GRAPHICS_OUTPUT_PROTOCOL  *This,
+  IN     BOOLEAN                       UseCustom
   )
 {
-  EFI_STATUS                    Status;
-  UINTN                         ConfigureSize;
-  FRAME_BUFFER_CONFIGURE        *Context;
+  EFI_GRAPHICS_OUTPUT_MODE_INFORMATION  *Source;
+
+  ASSERT (This != NULL);
+  ASSERT (This->Mode != NULL);
+  ASSERT (This->Mode->Info != NULL);
+
+  if (UseCustom) {
+    Source                      = &mGop.CustomModeInfo;
+    This->Mode->FrameBufferBase = 0;
+    This->Mode->FrameBufferSize = 0;
+  } else {
+    Source                      = &mGop.OriginalModeInfo;
+    This->Mode->FrameBufferBase = mGop.OriginalFrameBufferBase;
+    This->Mode->FrameBufferSize = mGop.OriginalFrameBufferSize;
+  }
+
+  This->Mode->Info->VerticalResolution   = Source->VerticalResolution;
+  This->Mode->Info->HorizontalResolution = Source->HorizontalResolution;
+  This->Mode->Info->PixelsPerScanLine    = Source->PixelsPerScanLine;
+}
+
+/**
+  Translate current GOP mode to custom (rotated) mode.
+  Both original and custom modes are saved.
+
+  @param[in,out]  This      GOP protocol to update.
+  @param[in]      Rotation  Rotation angle.
+**/
+STATIC
+VOID
+RotateMode (
+  IN OUT EFI_GRAPHICS_OUTPUT_PROTOCOL  *This,
+  IN     UINT32                        Rotation
+  )
+{
+  ASSERT (This != NULL);
+  ASSERT (This->Mode != NULL);
+  ASSERT (This->Mode->Info != NULL);
+
+  CopyMem (&mGop.OriginalModeInfo, This->Mode->Info, sizeof (mGop.OriginalModeInfo));
+
+  if ((Rotation == 90) || (Rotation == 270)) {
+    This->Mode->Info->HorizontalResolution = mGop.OriginalModeInfo.VerticalResolution;
+    This->Mode->Info->VerticalResolution   = mGop.OriginalModeInfo.HorizontalResolution;
+    This->Mode->Info->PixelsPerScanLine    = This->Mode->Info->HorizontalResolution;
+  }
+
+  mGop.OriginalFrameBufferBase = This->Mode->FrameBufferBase;
+  mGop.OriginalFrameBufferSize = This->Mode->FrameBufferSize;
+
+  if (Rotation != 0) {
+    //
+    // macOS requires FrameBufferBase to be 0 for rotation to work, which
+    // forces it inspect the AppleFramebufferInfo protocol.
+    // It also requires PixelFormat to be <= PixelBitMask, otherwise Apple
+    // logo will not show.
+    // REF: https://github.com/acidanthera/bugtracker/issues/1498#issuecomment-782822654
+    //
+    // Windows and Linux bootloaders only draw directly to the framebuffer.
+    //
+    This->Mode->FrameBufferBase = 0;
+    This->Mode->FrameBufferSize = 0;
+  }
+
+  CopyMem (&mGop.CustomModeInfo, This->Mode->Info, sizeof (mGop.CustomModeInfo));
+}
+
+STATIC
+OC_BLIT_CONFIGURE *
+EFIAPI
+DirectGopFromTarget (
+  IN  EFI_PHYSICAL_ADDRESS                  FramebufferBase,
+  IN  EFI_GRAPHICS_OUTPUT_MODE_INFORMATION  *Info,
+  OUT UINTN                                 *PageCount
+  )
+{
+  EFI_STATUS         Status;
+  UINTN              ConfigureSize;
+  OC_BLIT_CONFIGURE  *Context;
 
   ConfigureSize = 0;
-  Status = FrameBufferBltConfigure (
-    (VOID *)(UINTN) FramebufferBase,
-    Info,
-    NULL,
-    &ConfigureSize
-    );
+  Status        = OcBlitConfigure (
+                    (VOID *)(UINTN)FramebufferBase,
+                    Info,
+                    mGop.Rotation,
+                    NULL,
+                    &ConfigureSize
+                    );
   if (Status != EFI_BUFFER_TOO_SMALL) {
     return NULL;
   }
 
-  Context = AllocatePool (ConfigureSize);
+  *PageCount = EFI_SIZE_TO_PAGES (ConfigureSize);
+  Context    = AllocatePages (*PageCount);
   if (Context == NULL) {
     return NULL;
   }
 
-  Status = FrameBufferBltConfigure (
-    (VOID *)(UINTN) FramebufferBase,
-    Info,
-    Context,
-    &ConfigureSize
-    );
+  Status = OcBlitConfigure (
+             (VOID *)(UINTN)FramebufferBase,
+             Info,
+             mGop.Rotation,
+             Context,
+             &ConfigureSize
+             );
   if (EFI_ERROR (Status)) {
-    FreePool (Context);
+    FreePages (Context, *PageCount);
     return NULL;
   }
 
@@ -244,13 +353,13 @@ STATIC
 EFI_STATUS
 EFIAPI
 DirectGopSetMode (
-  IN  EFI_GRAPHICS_OUTPUT_PROTOCOL *This,
-  IN  UINT32                       ModeNumber
+  IN  EFI_GRAPHICS_OUTPUT_PROTOCOL  *This,
+  IN  UINT32                        ModeNumber
   )
 {
-  EFI_STATUS              Status;
-  EFI_TPL                 OldTpl;
-  FRAME_BUFFER_CONFIGURE  *Original;
+  EFI_STATUS         Status;
+  EFI_TPL            OldTpl;
+  OC_BLIT_CONFIGURE  *Original;
 
   if (ModeNumber == This->Mode->Mode) {
     return EFI_SUCCESS;
@@ -259,33 +368,45 @@ DirectGopSetMode (
   OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
 
   //
-  // Protect from invalid Blt calls during SetMode
+  // Protect from invalid Blt calls during SetMode.
   //
-  Original = mFramebufferContext;
-  mFramebufferContext = NULL;
+  Original                = mGop.FramebufferContext;
+  mGop.FramebufferContext = NULL;
 
-  Status = mOriginalGopSetMode (This, ModeNumber);
+  //
+  // Protect from mishandling of rotated info.
+  //
+  SwitchMode (This, FALSE);
+
+  Status = mGop.OriginalGopSetMode (This, ModeNumber);
   if (EFI_ERROR (Status)) {
-    mFramebufferContext = Original;
+    SwitchMode (This, TRUE);
+    mGop.FramebufferContext = Original;
     gBS->RestoreTPL (OldTpl);
     return Status;
   }
 
   if (Original != NULL) {
-    FreePool (Original);
+    FreePages (Original, mGop.FramebufferContextPageCount);
   }
 
-  mFramebufferContext = DirectGopFromTarget (This->Mode->FrameBufferBase, This->Mode->Info);
-  if (mFramebufferContext == NULL) {
+  RotateMode (This, mGop.Rotation);
+
+  mGop.FramebufferContext = DirectGopFromTarget (
+                              mGop.OriginalFrameBufferBase,
+                              &mGop.OriginalModeInfo,
+                              &mGop.FramebufferContextPageCount
+                              );
+  if (mGop.FramebufferContext == NULL) {
     gBS->RestoreTPL (OldTpl);
     return EFI_DEVICE_ERROR;
   }
 
-  if (mCachePolicy >= 0) {
+  if (mGop.CachePolicy >= 0) {
     MtrrSetMemoryAttribute (
-      This->Mode->FrameBufferBase,
-      This->Mode->FrameBufferSize,
-      mCachePolicy
+      mGop.OriginalFrameBufferBase,
+      mGop.OriginalFrameBufferSize,
+      mGop.CachePolicy
       );
   }
 
@@ -296,32 +417,62 @@ DirectGopSetMode (
 STATIC
 EFI_STATUS
 EFIAPI
-DirectGopBlt (
-  IN  EFI_GRAPHICS_OUTPUT_PROTOCOL            *This,
-  IN  EFI_GRAPHICS_OUTPUT_BLT_PIXEL           *BltBuffer   OPTIONAL,
-  IN  EFI_GRAPHICS_OUTPUT_BLT_OPERATION       BltOperation,
-  IN  UINTN                                   SourceX,
-  IN  UINTN                                   SourceY,
-  IN  UINTN                                   DestinationX,
-  IN  UINTN                                   DestinationY,
-  IN  UINTN                                   Width,
-  IN  UINTN                                   Height,
-  IN  UINTN                                   Delta         OPTIONAL
+DirectQueryMode (
+  IN  EFI_GRAPHICS_OUTPUT_PROTOCOL          *This,
+  IN  UINT32                                ModeNumber,
+  OUT UINTN                                 *SizeOfInfo,
+  OUT EFI_GRAPHICS_OUTPUT_MODE_INFORMATION  **Info
   )
 {
-  if (mFramebufferContext != NULL) {
-    return FrameBufferBlt (
-      mFramebufferContext,
-      BltBuffer,
-      BltOperation,
-      SourceX,
-      SourceY,
-      DestinationX,
-      DestinationY,
-      Width,
-      Height,
-      Delta
-      );
+  EFI_STATUS  Status;
+  UINT32      HorizontalResolution;
+
+  SwitchMode (This, FALSE);
+  Status = mGop.OriginalGopQueryMode (This, ModeNumber, SizeOfInfo, Info);
+  if (EFI_ERROR (Status)) {
+    SwitchMode (This, TRUE);
+    return Status;
+  }
+
+  if ((mGop.Rotation == 90) || (mGop.Rotation == 270)) {
+    HorizontalResolution          = (*Info)->HorizontalResolution;
+    (*Info)->HorizontalResolution = (*Info)->VerticalResolution;
+    (*Info)->VerticalResolution   = HorizontalResolution;
+    (*Info)->PixelsPerScanLine    = (*Info)->HorizontalResolution;
+  }
+
+  return Status;
+}
+
+STATIC
+EFI_STATUS
+EFIAPI
+DirectGopBlt (
+  IN  EFI_GRAPHICS_OUTPUT_PROTOCOL       *This,
+  IN  EFI_GRAPHICS_OUTPUT_BLT_PIXEL      *BltBuffer   OPTIONAL,
+  IN  EFI_GRAPHICS_OUTPUT_BLT_OPERATION  BltOperation,
+  IN  UINTN                              SourceX,
+  IN  UINTN                              SourceY,
+  IN  UINTN                              DestinationX,
+  IN  UINTN                              DestinationY,
+  IN  UINTN                              Width,
+  IN  UINTN                              Height,
+  IN  UINTN                              Delta         OPTIONAL
+  )
+{
+  if (mGop.FramebufferContext != NULL) {
+    return OcBlitRender (
+             mGop.FramebufferContext,
+             BltBuffer,
+             BltOperation,
+             SourceX,
+             SourceY,
+             DestinationX,
+             DestinationY,
+             Width,
+             Height,
+             Delta
+             );
   }
 
   return EFI_DEVICE_ERROR;
@@ -354,12 +505,12 @@ OcReconnectConsole (
   //
 
   Status = gBS->LocateHandleBuffer (
-    ByProtocol,
-    &gEfiSimpleTextOutProtocolGuid,
-    NULL,
-    &HandleCount,
-    &HandleBuffer
-    );
+                  ByProtocol,
+                  &gEfiSimpleTextOutProtocolGuid,
+                  NULL,
+                  &HandleCount,
+                  &HandleBuffer
+                  );
   if (!EFI_ERROR (Status)) {
     for (Index = 0; Index < HandleCount; ++Index) {
       gBS->DisconnectController (HandleBuffer[Index], NULL, NULL);
@@ -388,14 +539,16 @@ OcUseDirectGop (
 {
   EFI_STATUS                    Status;
   EFI_GRAPHICS_OUTPUT_PROTOCOL  *Gop;
+  APPLE_EG2_INFO_PROTOCOL       *Eg2;
+  UINT32                        Rotation;
 
   DEBUG ((DEBUG_INFO, "OCC: Switching to direct GOP renderer...\n"));
 
   Status = gBS->HandleProtocol (
-    gST->ConsoleOutHandle,
-    &gEfiGraphicsOutputProtocolGuid,
-    (VOID **) &Gop
-    );
+                  gST->ConsoleOutHandle,
+                  &gEfiGraphicsOutputProtocolGuid,
+                  (VOID **)&Gop
+                  );
 
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_INFO, "OCC: Cannot find console GOP for direct GOP - %r\n", Status));
@@ -407,37 +560,85 @@ OcUseDirectGop (
     return EFI_UNSUPPORTED;
   }
 
-  mFramebufferContext = DirectGopFromTarget (Gop->Mode->FrameBufferBase, Gop->Mode->Info);
-  if (mFramebufferContext == NULL) {
+  Status = gBS->LocateProtocol (
+                  &gAppleEg2InfoProtocolGuid,
+                  NULL,
+                  (VOID **)&Eg2
+                  );
+  if (!EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_INFO, "OCC: Found EG2 support %X\n", Eg2->Revision));
+    if (Eg2->Revision >= APPLE_EG2_INFO_PROTOCOL_REVISION_ROTATE) {
+      Rotation = 0;
+      Status   = Eg2->GetRotation (Eg2, &Rotation);
+      if (!EFI_ERROR (Status) && (Rotation < AppleDisplayRotateMax)) {
+        if (Rotation == AppleDisplayRotate90) {
+          mGop.Rotation = 90;
+        } else if (Rotation == AppleDisplayRotate180) {
+          mGop.Rotation = 180;
+        } else if (Rotation == AppleDisplayRotate270) {
+          mGop.Rotation = 270;
+        }
+
+        DEBUG ((DEBUG_INFO, "OCC: Got rotation %u degrees from EG2\n", mGop.Rotation));
+      } else {
+        DEBUG ((DEBUG_INFO, "OCC: Invalid rotation %u from EG2 - %r\n", Rotation, Status));
+      }
+    }
+  } else {
+    DEBUG ((DEBUG_INFO, "OCC: No Apple EG2 support - %r\n", Status));
+  }
+
+  RotateMode (Gop, mGop.Rotation);
+
+  mGop.FramebufferContext = DirectGopFromTarget (
+                              mGop.OriginalFrameBufferBase,
+                              &mGop.OriginalModeInfo,
+                              &mGop.FramebufferContextPageCount
+                              );
+  if (mGop.FramebufferContext == NULL) {
     DEBUG ((DEBUG_INFO, "OCC: Delaying direct GOP configuration...\n"));
     //
     // This is possible at the start.
     //
   }
 
-  mOriginalGopSetMode = Gop->SetMode;
-  Gop->SetMode = DirectGopSetMode;
-  Gop->Blt = DirectGopBlt;
-  mCachePolicy = -1;
+  mGop.OriginalGopSetMode   = Gop->SetMode;
+  mGop.OriginalGopQueryMode = Gop->QueryMode;
+  Gop->SetMode              = DirectGopSetMode;
+  Gop->QueryMode            = DirectQueryMode;
+  Gop->Blt                  = DirectGopBlt;
+  mGop.CachePolicy          = -1;
 
   if (CacheType >= 0) {
     Status = MtrrSetMemoryAttribute (
-      Gop->Mode->FrameBufferBase,
-      Gop->Mode->FrameBufferSize,
-      CacheType
-      );
+               mGop.OriginalFrameBufferBase,
+               mGop.OriginalFrameBufferSize,
+               CacheType
+               );
     DEBUG ((
       DEBUG_INFO,
       "OCC: FB (%Lx, %Lx) MTRR (%x) - %r\n",
-      (UINT64) Gop->Mode->FrameBufferBase,
-      (UINT64) Gop->Mode->FrameBufferSize,
+      (UINT64)mGop.OriginalFrameBufferBase,
+      (UINT64)mGop.OriginalFrameBufferSize,
       CacheType,
       Status
       ));
     if (!EFI_ERROR (Status)) {
-      mCachePolicy = CacheType;
+      mGop.CachePolicy = CacheType;
     }
   }
 
   return EFI_SUCCESS;
+}
+
+CONST CONSOLE_GOP_CONTEXT *
+InternalGetDirectGopContext (
+  VOID
+  )
+{
+  if ((mGop.Rotation != 0) && (mGop.OriginalGopSetMode != NULL)) {
+    return &mGop;
+  }
+
+  return NULL;
 }

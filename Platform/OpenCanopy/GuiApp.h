@@ -13,9 +13,10 @@
 
 #include <Library/OcBootManagementLib.h>
 
-#define MAX_CURSOR_DIMENSION  144U
-
 #define BOOT_CURSOR_OFFSET  4U
+
+#define MAX_CURSOR_DIMENSION  144U
+#define MIN_CURSOR_DIMENSION  BOOT_CURSOR_OFFSET
 
 #define BOOT_ENTRY_DIMENSION          144U
 #define BOOT_ENTRY_ICON_DIMENSION     APPLE_DISK_ICON_DIMENSION
@@ -39,14 +40,16 @@
 #define BOOT_SCROLL_BUTTON_DIMENSION  40U
 #define BOOT_SCROLL_BUTTON_SPACE      40U
 
-#define BOOT_ACTION_BUTTON_DIMENSION        128U
-#define BOOT_ACTION_BUTTON_FOCUS_DIMENSION  144U
-#define BOOT_ACTION_BUTTON_SPACE            36U
+#define BOOT_ACTION_BUTTON_DIMENSION           128U
+#define BOOT_ACTION_BUTTON_FOCUS_DIMENSION     144U
+#define BOOT_ACTION_BUTTON_PRESSED_FACTOR      ((53U << 16) / 100)
+#define BOOT_ACTION_BUTTON_PRESSED_FACTOR_MAX  0x10000U
+#define BOOT_ACTION_BUTTON_SPACE               36U
 
-#define PASSWORD_LOCK_DIMENSION 144U
+#define PASSWORD_LOCK_DIMENSION  144U
 
-#define PASSWORD_ENTER_WIDTH  75U
-#define PASSWORD_ENTER_HEIGHT 30U
+#define PASSWORD_ENTER_WIDTH   75U
+#define PASSWORD_ENTER_HEIGHT  30U
 
 #define PASSWORD_BOX_WIDTH   288U
 #define PASSWORD_BOX_HEIGHT  30U
@@ -63,6 +66,10 @@ typedef enum {
   LABEL_TOOL,
   LABEL_RESET_NVRAM,
   LABEL_SHELL,
+  LABEL_SIP_IS_ENABLED,
+  LABEL_SIP_IS_DISABLED,
+  LABEL_FIRMWARE_SETTINGS,
+  LABEL_NETWORK_BOOT,
   LABEL_NUM_TOTAL
 } LABEL_TARGET;
 
@@ -81,12 +88,13 @@ typedef enum {
   ICON_ENTER,
   ICON_LOCK,
   ICON_NUM_SYS,
-  ICON_GENERIC_HDD       = ICON_NUM_SYS,
+  ICON_GENERIC_HDD = ICON_NUM_SYS,
   ICON_NUM_MANDATORY,
-  ICON_APPLE             = ICON_NUM_MANDATORY,
+  ICON_APPLE = ICON_NUM_MANDATORY,
   ICON_APPLE_RECOVERY,
   ICON_APPLE_TIME_MACHINE,
   ICON_WINDOWS,
+  ICON_GENERIC_CD,
   ICON_OTHER,
   ICON_TOOL,
   ICON_RESET_NVRAM,
@@ -109,24 +117,26 @@ enum {
 };
 
 typedef struct _BOOT_PICKER_GUI_CONTEXT {
-  GUI_IMAGE                            Background;
-  GUI_IMAGE                            Icons[ICON_NUM_TOTAL][ICON_TYPE_COUNT];
-  GUI_IMAGE                            Labels[LABEL_NUM_TOTAL];
+  GUI_IMAGE                              Background;
+  GUI_IMAGE                              Icons[ICON_NUM_TOTAL][ICON_TYPE_COUNT];
+  GUI_IMAGE                              Labels[LABEL_NUM_TOTAL];
   // GUI_IMAGE                         Poof[5];
-  GUI_FONT_CONTEXT                     FontContext;
-  VOID                                 *BootEntry;
-  EFI_GRAPHICS_OUTPUT_BLT_PIXEL_UNION  BackgroundColor;
-  BOOLEAN                              HideAuxiliary;
-  BOOLEAN                              Refresh;
-  BOOLEAN                              LightBackground;
-  BOOLEAN                              DoneIntroAnimation;
-  BOOLEAN                              ReadyToBoot;
-  UINT8                                Scale;
-  UINT8                                VoAction;
-  INT32                                CursorOffsetX;
-  INT32                                CursorOffsetY;
-  INT32                                AudioPlaybackTimeout;
-  OC_PICKER_CONTEXT                    *PickerContext;
+  GUI_FONT_CONTEXT                       FontContext;
+  CONST CHAR8                            *Prefix;
+  VOID                                   *BootEntry;
+  EFI_GRAPHICS_OUTPUT_BLT_PIXEL_UNION    BackgroundColor;
+  BOOLEAN                                HideAuxiliary;
+  BOOLEAN                                Refresh;
+  BOOLEAN                                LightBackground;
+  BOOLEAN                                UsePasswordEaseIn;
+  BOOLEAN                                UseMenuEaseIn;
+  BOOLEAN                                ReadyToBoot;
+  UINT8                                  Scale;
+  UINT8                                  VoAction;
+  INT32                                  CursorOffsetX;
+  INT32                                  CursorOffsetY;
+  INT32                                  AudioPlaybackTimeout;
+  OC_PICKER_CONTEXT                      *PickerContext;
 } BOOT_PICKER_GUI_CONTEXT;
 
 EFI_STATUS
@@ -158,10 +168,10 @@ BootPickerViewLateInitialize (
 
 EFI_STATUS
 BootPickerEntriesSet (
-  IN OC_PICKER_CONTEXT              *Context,
-  IN BOOT_PICKER_GUI_CONTEXT        *GuiContext,
-  IN OC_BOOT_ENTRY                  *Entry,
-  IN UINT8                          EntryIndex
+  IN OC_PICKER_CONTEXT        *Context,
+  IN BOOT_PICKER_GUI_CONTEXT  *GuiContext,
+  IN OC_BOOT_ENTRY            *Entry,
+  IN UINT8                    EntryIndex
   );
 
 VOID
@@ -173,6 +183,18 @@ BootPickerViewDeinitialize (
 CONST GUI_IMAGE *
 InternalGetCursorImage (
   IN BOOT_PICKER_GUI_CONTEXT  *Context
+  );
+
+EFI_STATUS
+InternalGetFlavourIcon (
+  IN  BOOT_PICKER_GUI_CONTEXT  *GuiContext,
+  IN  OC_STORAGE_CONTEXT       *Storage,
+  IN  CHAR8                    *FlavourName,
+  IN  UINTN                    FlavourNameLen,
+  IN  UINT32                   IconTypeIndex,
+  IN  BOOLEAN                  UseFlavourIcon,
+  OUT GUI_IMAGE                *EntryIcon,
+  OUT BOOLEAN                  *CustomIcon
   );
 
 #endif // GUI_APP_H

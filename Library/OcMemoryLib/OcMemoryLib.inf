@@ -17,7 +17,7 @@
 ##
 
 [Defines]
-  INF_VERSION    = 0x00010005
+  INF_VERSION    = 0x0001001B
   BASE_NAME      = OcMemoryLib
   FILE_GUID      = EADEF108-EFA4-4425-A2C3-4682118B888B
   MODULE_TYPE    = BASE
@@ -30,6 +30,7 @@
   OpenCorePkg/OpenCorePkg.dec
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
+  UefiCpuPkg/UefiCpuPkg.dec
 
 [Guids]
   gEfiMemoryAttributesTableGuid
@@ -40,8 +41,9 @@
 
 [LibraryClasses]
   BaseLib
+  BaseOverflowLib
   UefiLib
-  OcGuardLib
+  MtrrLib
   OcStringLib
 
 [Sources]

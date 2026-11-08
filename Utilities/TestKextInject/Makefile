@@ -4,7 +4,7 @@
 ##
 
 PROJECT = KextInject
-PRODUCT = $(PROJECT)$(SUFFIX)
+PRODUCT = $(PROJECT)$(INFIX)$(SUFFIX)
 OBJS    = $(PROJECT).o \
 	CommonPatches.o \
 	CpuidPatches.o \
@@ -29,9 +29,11 @@ OBJS    = $(PROJECT).o \
 	inftrees.o \
 	trees.o \
 	uncompr.o \
-	zlib_uefi.o
+	zlib_uefi.o \
+	zutil.o
 VPATH   = ../../Library/OcAppleKernelLib:$\
 	../../Library/OcCompressionLib/lzss:$\
 	../../Library/OcCompressionLib/lzvn:$\
 	../../Library/OcCompressionLib/zlib
 include ../../User/Makefile
+include ../../User/SilenceZlibWarnings

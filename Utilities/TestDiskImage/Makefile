@@ -4,7 +4,7 @@
 ##
 
 PROJECT = DiskImage
-PRODUCT = $(PROJECT)$(SUFFIX)
+PRODUCT = $(PROJECT)$(INFIX)$(SUFFIX)
 OBJS    = $(PROJECT).o \
 	FileDummy.o \
 	OcAppleChunklistLib.o \
@@ -21,9 +21,11 @@ OBJS    = $(PROJECT).o \
 	inftrees.o \
 	trees.o \
 	uncompr.o \
-	zlib_uefi.o
+	zlib_uefi.o \
+	zutil.o
 VPATH   = ../../Library/OcAppleChunklistLib:$\
 	../../Library/OcAppleDiskImageLib:$\
 	../../Library/OcAppleRamDiskLib:$\
 	../../Library/OcCompressionLib/zlib
 include ../../User/Makefile
+include ../../User/SilenceZlibWarnings

@@ -1,7 +1,7 @@
 BIOSVendor: "Apple Inc."
-BIOSVersion: "429.80.1.0.0"
-BIOSLegacyVersion: "MBP132.88Z.F000.B00.2101051913"
-BIOSReleaseDate: "01/05/2021"
+BIOSVersion: "529.120.1.0.0"
+BIOSLegacyVersion: "MBP132.88Z.F000.B00.2403141830"
+BIOSReleaseDate: "03/14/2024"
 SystemManufacturer: "Apple Inc."
 SystemProductName: "MacBookPro13,2"
 SystemVersion: "1.0"
@@ -29,8 +29,8 @@ ChassisAssetTag: ""
 PlatformFeature: 0x1A
 FirmwareFeatures: 0xFC0FE137
 FirmwareFeaturesMask: 0xFF1FFF3F
-ExtendedFirmwareFeatures: 0x00000000FC0FE137
-ExtendedFirmwareFeaturesMask: 0x00000000FF1FFF3F
+ExtendedFirmwareFeatures: 0x00000008FC0FE137
+ExtendedFirmwareFeaturesMask: 0x00000008FF1FFF3F
 MemoryFormFactor: 0xD
 # FIXME: check values (most should be correct?) and add missing, if any
 ProcessorType:
@@ -74,17 +74,17 @@ SmcPlatform:
 SmcEPCI: 0xF02009
 OEMStrings: |-
   Apple ROM Version
-    BIOS ID:      MBP132.88Z.F000.B00.2101051913
+    BIOS ID:      MBP132.88Z.F000.B00.2403141830
     Model:        MBP132
-    EFI Version:  429.80.1.0.0
-    Built by:     root@osx398
-    Date:         Tue Jan  5 19:13:46 2021
-    Revision:     429.80.1 (B&I)
+    EFI Version:  529.120.1.0.0
+    Built by:     root@qzpcj
+    Date:         Thu Mar 14 18:30:49 2024
+    Revision:     529.120.1 (B&I)
     ROM Version:  F000_B00
     Build Type:   Official Build, RELEASE
-    Compiler:     clang-1200.0.30.4
-    UUID:         165591E2-064E-32C2-97C1-5041EB4A6B33
-    UUID:         AD0FBE58-F169-3333-92E5-99464CD9CC37
+    Compiler:     clang-1500.3.9.1
+    UUID:         3F392573-A5AF-3C22-ACDC-3F8CA7377A80
+    UUID:         48EE4E27-82CE-3AE7-ACB6-916AD379D1EC
 Specifications:
   CPUCodename:
     - "Skylake"
@@ -191,6 +191,5 @@ AppleBoardCode:
 AppleModelYear:
   - 2016
   - 2017
-CloverSerialNumber: "C02SLHACGYFH"
 MinimumOSVersion: "10.12.1"
-MaximumOSVersion: null
+MaximumOSVersion: "12.7.6"

@@ -15,8 +15,11 @@
 
 #include "../GuiIo.h"
 
+#define MIN_RESOLUTION_HORIZONTAL  640U
+#define MIN_RESOLUTION_VERTICAL    480U
+
 struct GUI_OUTPUT_CONTEXT_ {
-  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
+  EFI_GRAPHICS_OUTPUT_PROTOCOL    *Gop;
 };
 
 STATIC
@@ -25,14 +28,14 @@ InternalGuiOutputLocateGop (
   VOID
   )
 {
-  EFI_STATUS                   Status;
-  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop;
+  EFI_STATUS                    Status;
+  EFI_GRAPHICS_OUTPUT_PROTOCOL  *Gop;
 
   Status = gBS->HandleProtocol (
-    gST->ConsoleOutHandle,
-    &gEfiGraphicsOutputProtocolGuid,
-    (VOID **) &Gop
-    );
+                  gST->ConsoleOutHandle,
+                  &gEfiGraphicsOutputProtocolGuid,
+                  (VOID **)&Gop
+                  );
   if (EFI_ERROR (Status)) {
     //
     // Do not fall back to other GOP instances to match AppleEvent.
@@ -45,16 +48,30 @@ InternalGuiOutputLocateGop (
 
 GUI_OUTPUT_CONTEXT *
 GuiOutputConstruct (
-  VOID
+  IN UINT32  Scale
   )
 {
   // TODO: alloc on the fly?
-  STATIC GUI_OUTPUT_CONTEXT Context;
+  STATIC GUI_OUTPUT_CONTEXT  Context;
 
   EFI_GRAPHICS_OUTPUT_PROTOCOL  *Gop;
 
-  Gop = InternalGuiOutputLocateGop();
+  Gop = InternalGuiOutputLocateGop ();
   if (Gop == NULL) {
+    return NULL;
+  }
+
+  if (  (Gop->Mode->Info->HorizontalResolution < MIN_RESOLUTION_HORIZONTAL * Scale)
+     || (Gop->Mode->Info->VerticalResolution < MIN_RESOLUTION_VERTICAL * Scale))
+  {
+    DEBUG ((
+      DEBUG_WARN,
+      "OCUI: Expected at least %dx%d for resolution, actual %dx%d\n",
+      MIN_RESOLUTION_HORIZONTAL * Scale,
+      MIN_RESOLUTION_VERTICAL * Scale,
+      Gop->Mode->Info->HorizontalResolution,
+      Gop->Mode->Info->VerticalResolution
+      ));
     return NULL;
   }
 
@@ -78,17 +95,17 @@ GuiOutputBlt (
   )
 {
   return Context->Gop->Blt (
-    Context->Gop,
-    BltBuffer,
-    BltOperation,
-    SourceX,
-    SourceY,
-    DestinationX,
-    DestinationY,
-    Width,
-    Height,
-    Delta
-    );
+                         Context->Gop,
+                         BltBuffer,
+                         BltOperation,
+                         SourceX,
+                         SourceY,
+                         DestinationX,
+                         DestinationY,
+                         Width,
+                         Height,
+                         Delta
+                         );
 }
 
 CONST EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *

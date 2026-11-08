@@ -1,6 +1,6 @@
 ## @file
 #
-#  Component description file for OcMisclibrary.
+#  Component description file for OcMp3Lib.
 #
 #  Copyright (C) 2016 - 2018, The HermitCrabs Lab. All rights reserved.<BR>
 #
@@ -17,7 +17,7 @@
 ##
 
 [Defines]
-  INF_VERSION    = 0x00010005
+  INF_VERSION    = 0x0001001B
   BASE_NAME      = OcMp3Lib
   FILE_GUID      = 05882BFC-54A4-4D21-A5F6-D87E4C4079EA
   MODULE_TYPE    = BASE
@@ -34,10 +34,10 @@
 [LibraryClasses]
   BaseLib
   BaseMemoryLib
+  BaseOverflowLib
   DebugLib
   MemoryAllocationLib
   UefiLib
-  OcGuardLib
   OcStringLib
 
 [Sources]
@@ -52,6 +52,7 @@
   helix/hufftabs.c
   helix/imdct.c
   helix/mp3common.h
+  helix/mp3compat.h
   helix/mp3dec.h
   helix/mp3dec.c
   helix/mp3tabs.c
